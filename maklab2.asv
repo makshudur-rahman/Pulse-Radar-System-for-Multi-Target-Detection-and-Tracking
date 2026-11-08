@@ -1,0 +1,883 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% DIGITAL PULSE RADAR
+% MATLAB POST PROCESSING
+% PART-1 (Chunk-1)
+%
+% Compatible with MATLAB R2024b
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+clc;
+clearvars -except out_rx_raw out_rx_raw_mag out_mf out_mf_mag
+close all;
+
+%% =======================================================================
+% Radar Parameters
+% ========================================================================
+
+c  = physconst('LightSpeed');
+
+fc = 5e9;                  % Carrier Frequency
+
+fs = 12e6;                 % Sample Rate
+
+PRF = 6000;                % Pulse Repetition Frequency
+
+B = 3e6;                   % Sweep Bandwidth
+
+lambda = c/fc;
+
+%% =======================================================================
+% Verify Required Variables
+% ========================================================================
+
+requiredVars = { ...
+    'out_rx_raw',...
+    'out_rx_raw_mag',...
+    'out_mf',...
+    'out_mf_mag'};
+
+for k = 1:length(requiredVars)
+
+    if ~exist(requiredVars{k},'var')
+
+        error(['Variable "',requiredVars{k},'" not found.' ...
+               ' Run the Simulink model first.']);
+
+    end
+
+end
+
+disp('---------------------------------------------')
+disp('Radar data successfully loaded.')
+disp('---------------------------------------------')
+
+%% =======================================================================
+% Convert Logged Signals
+% ========================================================================
+
+rx_raw = squeeze(out_rx_raw);
+
+rx_raw_mag = squeeze(out_rx_raw_mag);
+
+mf = squeeze(out_mf);
+
+mf_mag = squeeze(out_mf_mag);
+
+%% =======================================================================
+% Ensure Correct Orientation
+% Rows = Fast Time
+% Columns = Pulses
+% ========================================================================
+
+if size(rx_raw,1) < size(rx_raw,2)
+
+    rx_raw = rx_raw';
+
+end
+
+if size(rx_raw_mag,1) < size(rx_raw_mag,2)
+
+    rx_raw_mag = rx_raw_mag';
+
+end
+
+if size(mf,1) < size(mf,2)
+
+    mf = mf';
+
+end
+
+if size(mf_mag,1) < size(mf_mag,2)
+
+    mf_mag = mf_mag';
+
+end
+
+%% =======================================================================
+% Determine Dimensions
+% ========================================================================
+
+Ns = size(rx_raw,1);
+
+Np = size(rx_raw,2);
+
+fprintf('\n');
+
+fprintf('=============================================\n');
+
+fprintf(' Radar Data Information\n');
+
+fprintf('=============================================\n');
+
+fprintf('Samples / Pulse        : %d\n',Ns);
+
+fprintf('Number of Pulses       : %d\n',Np);
+
+fprintf('Carrier Frequency      : %.2f GHz\n',fc/1e9);
+
+fprintf('Sampling Frequency     : %.2f MHz\n',fs/1e6);
+
+fprintf('PRF                    : %.0f Hz\n',PRF);
+
+fprintf('Sweep Bandwidth        : %.2f MHz\n',B/1e6);
+
+fprintf('=============================================\n');
+
+%% =======================================================================
+% Radar Performance
+% ========================================================================
+
+rangeResolution = c/(2*B);
+
+maximumRange = c/(2*PRF);
+
+velocityResolution = (PRF/Np)*(lambda/2);
+
+maximumVelocity = lambda*PRF/4;
+
+fprintf('\n');
+
+fprintf('Range Resolution       : %.2f m\n',rangeResolution);
+
+fprintf('Maximum Range          : %.2f km\n',maximumRange/1000);
+
+fprintf('Velocity Resolution    : %.3f m/s\n',velocityResolution);
+
+fprintf('Maximum Velocity       : %.2f m/s\n',maximumVelocity);
+
+%% =======================================================================
+% Create Axes
+% ========================================================================
+
+sampleAxis = 1:Ns;
+
+pulseAxis = 1:Np;
+
+timeAxis = (0:Ns-1)/fs;
+
+%% =======================================================================
+% Calibrated Range Axis
+% =======================================================================
+
+pulseWidth = 20e-6;          % Pulse Width (20 us)
+
+matchedFilterDelay = c*pulseWidth/2;
+
+rangeAxis = (0:Ns-1)*c/(2*fs);
+
+rangeAxis = rangeAxis - matchedFilterDelay;
+
+% Remove negative ranges
+rangeAxis(rangeAxis<0)=0;
+
+velocityAxis = (-Np/2:Np/2-1)*(PRF/Np)*lambda/2;
+
+%% =======================================================================
+% Figure Formatting
+% ========================================================================
+
+set(groot,...
+    'defaultAxesFontName','Times New Roman');
+
+set(groot,...
+    'defaultAxesFontSize',12);
+
+set(groot,...
+    'defaultLineLineWidth',1.6);
+
+%% =======================================================================
+% Figure 1
+% Received Complex Signal
+% ========================================================================
+
+figure('Name','Received Complex Signal',...
+       'Color','w',...
+       'Position',[100 100 1200 450]);
+
+tiledlayout(1,2,'TileSpacing','compact');
+
+nexttile
+
+plot(sampleAxis,...
+     real(rx_raw(:,1)));
+
+grid on
+
+xlabel('Sample')
+
+ylabel('Amplitude')
+
+title('Real Part')
+
+nexttile
+
+plot(sampleAxis,...
+     imag(rx_raw(:,1)));
+
+grid on
+
+xlabel('Sample')
+
+ylabel('Amplitude')
+
+title('Imaginary Part')
+
+
+%% =======================================================================
+% Professional Colors
+% ========================================================================
+
+clrBlue      = [0.0000 0.4470 0.7410];
+clrRed       = [0.8500 0.3250 0.0980];
+clrGreen     = [0.4660 0.6740 0.1880];
+clrPurple    = [0.4940 0.1840 0.5560];
+clrOrange    = [0.9290 0.6940 0.1250];
+clrTeal      = [0.3010 0.7450 0.9330];
+clrDark      = [0.20 0.20 0.20];
+
+%% =======================================================================
+% Figure 2
+% Received Signal Magnitude
+% ========================================================================
+
+figure('Name','Received Signal Magnitude',...
+    'Color','w',...
+    'Position',[120 120 1000 450]);
+
+plot(sampleAxis,...
+    rx_raw_mag(:,1),...
+    'Color',clrBlue,...
+    'LineWidth',1.8);
+
+grid on
+
+xlabel('Sample Number')
+
+ylabel('Magnitude')
+
+title('Received Signal Magnitude')
+
+xlim([1 Ns])
+
+%% =======================================================================
+% Figure 3
+% Matched Filter Output
+% ========================================================================
+
+figure('Name','Matched Filter Output',...
+    'Color','w',...
+    'Position',[120 120 1200 450]);
+
+tiledlayout(1,2,'TileSpacing','compact');
+
+nexttile
+
+plot(sampleAxis,...
+    real(mf(:,1)),...
+    'Color',clrRed);
+
+grid on
+
+xlabel('Sample Number')
+
+ylabel('Amplitude')
+
+title('Matched Filter (Real Part)')
+
+nexttile
+
+plot(sampleAxis,...
+    imag(mf(:,1)),...
+    'Color',clrPurple);
+
+grid on
+
+xlabel('Sample Number')
+
+ylabel('Amplitude')
+
+title('Matched Filter (Imaginary Part)')
+
+%% =======================================================================
+% Figure 4
+% Matched Filter Magnitude
+% ========================================================================
+
+figure('Name','Matched Filter Magnitude',...
+    'Color','w',...
+    'Position',[120 120 1000 450]);
+
+plot(sampleAxis,...
+    mf_mag(:,1),...
+    'Color',clrGreen,...
+    'LineWidth',2);
+
+grid on
+
+xlabel('Sample Number')
+
+ylabel('Magnitude')
+
+title('Matched Filter Magnitude')
+
+xlim([1 Ns])
+
+%% =======================================================================
+% Figure 5
+% Received Signal (All Pulses)
+% ========================================================================
+
+figure('Name','Received Signal Across Pulses',...
+    'Color','w',...
+    'Position',[80 80 950 650]);
+
+imagesc(pulseAxis,...
+         rangeAxis,...
+         rx_raw_mag);
+
+axis xy
+
+xlabel('Pulse Number')
+
+ylabel('Range (m)')
+
+title('Received Signal Magnitude (All Pulses)')
+
+colormap(parula)
+
+cb=colorbar;
+cb.Label.String='Magnitude';
+
+%% =======================================================================
+% Figure 6
+% Matched Filter (All Pulses)
+% ========================================================================
+
+figure('Name','Matched Filter Across Pulses',...
+    'Color','w',...
+    'Position',[80 80 950 650]);
+
+imagesc(pulseAxis,...
+         rangeAxis,...
+         mf_mag);
+
+axis xy
+
+xlabel('Pulse Number')
+
+ylabel('Range (m)')
+
+title('Matched Filter Magnitude (All Pulses)')
+
+colormap(turbo)
+
+cb=colorbar;
+cb.Label.String='Magnitude';
+
+%% =======================================================================
+% Display Basic Statistics
+% ========================================================================
+
+fprintf('\n');
+
+fprintf('=============================================\n');
+
+fprintf('Signal Statistics\n');
+
+fprintf('=============================================\n');
+
+fprintf('Maximum Raw Magnitude      : %.4f\n',max(rx_raw_mag(:)));
+
+fprintf('Mean Raw Magnitude         : %.4f\n',mean(rx_raw_mag(:)));
+
+fprintf('Maximum MF Magnitude       : %.4f\n',max(mf_mag(:)));
+
+fprintf('Mean MF Magnitude          : %.4f\n',mean(mf_mag(:)));
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PART 2A
+% RANGE PROFILE (CALIBRATED)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+disp(' ');
+disp('===============================================');
+disp('PART 2A : CALIBRATED RANGE PROFILE');
+disp('===============================================');
+
+%% =======================================================================
+% Average Range Profile
+% =======================================================================
+
+avgProfile = mean(mf_mag,2);
+
+avgProfile = avgProfile(:);
+
+avgProfile = avgProfile/max(avgProfile);
+
+range_km = rangeAxis(:)/1000;
+
+%% =======================================================================
+% Automatic Threshold
+% =======================================================================
+
+noiseFloor = median(avgProfile);
+
+threshold = noiseFloor + 0.18;
+
+%% =======================================================================
+% Peak Detection
+% =======================================================================
+
+[pks,locs] = findpeaks(...
+    avgProfile,...
+    'MinPeakHeight',threshold,...
+    'MinPeakDistance',30,...
+    'SortStr','descend');
+
+% Keep only strongest two peaks
+if length(pks)>2
+
+    pks = pks(1:2);
+    locs = locs(1:2);
+
+end
+
+% Sort by range
+[locs,idx] = sort(locs);
+
+pks = pks(idx);
+
+estimatedRange = range_km(locs);
+
+%% =======================================================================
+% Figure 7
+% =======================================================================
+
+figure('Color','w',...
+       'Position',[100 100 1050 500]);
+
+plot(range_km,...
+     avgProfile,...
+     'Color',clrPurple,...
+     'LineWidth',2);
+
+hold on
+
+plot(estimatedRange,...
+     pks,...
+     'o',...
+     'MarkerSize',10,...
+     'MarkerFaceColor',clrRed,...
+     'MarkerEdgeColor','k');
+
+for k=1:length(estimatedRange)
+
+    text(estimatedRange(k)+0.25,...
+         pks(k),...
+         sprintf('%.2f km',estimatedRange(k)),...
+         'FontWeight','bold',...
+         'FontSize',11);
+
+end
+
+grid on
+
+box on
+
+xlabel('Range (km)','FontWeight','bold')
+
+ylabel('Normalized Magnitude','FontWeight','bold')
+
+title('Average Range Profile with Automatic Detection')
+
+ylim([0 1.05])
+
+%% =======================================================================
+% True Targets
+% =======================================================================
+
+trueTargets = [8 15];
+
+for k=1:length(trueTargets)
+
+    xline(trueTargets(k),...
+        '--',...
+        'Color',[0.3 0.3 0.3],...
+        'LineWidth',1.5);
+
+end
+
+legend({'Range Profile',...
+        'Detected Target',...
+        'True Target'},...
+        'Location','best');
+
+%% =======================================================================
+% Detection Table
+% =======================================================================
+
+Target_Number = (1:length(estimatedRange))';
+
+Estimated_Range_km = estimatedRange(:);
+
+Peak_Magnitude = pks(:);
+
+Range_Error_m = (Estimated_Range_km - trueTargets(:))*1000;
+
+DetectionTable = table(...
+    Target_Number,...
+    Estimated_Range_km,...
+    Peak_Magnitude,...
+    Range_Error_m);
+
+disp(' ');
+disp('============== Detection Results ==============');
+
+disp(DetectionTable);
+
+disp('===============================================');
+
+%% =======================================================================
+% Detection Accuracy
+% =======================================================================
+
+fprintf('\n');
+
+fprintf('Target 1 Error : %.2f m\n',Range_Error_m(1));
+
+fprintf('Target 2 Error : %.2f m\n',Range_Error_m(2));
+
+fprintf('\n');
+
+disp('*********** PART 2A COMPLETED ***********');
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PART 2B
+% RANGE DETECTION ANALYSIS & PERFORMANCE
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+disp(' ');
+disp('===============================================');
+disp('PART 2B : RANGE DETECTION ANALYSIS');
+disp('===============================================');
+
+%% ========================================================================
+% True Target Information
+% ========================================================================
+
+trueRange = [8 15];      % km
+
+Ndet = length(estimatedRange);
+
+%% ========================================================================
+% Compute Range Error
+% ========================================================================
+
+RangeError = zeros(Ndet,1);
+
+for k = 1:min(Ndet,length(trueRange))
+
+    RangeError(k) = estimatedRange(k) - trueRange(k);
+
+end
+
+%% ========================================================================
+% Detailed Detection Table
+% ========================================================================
+
+DetectionSummary = table(...
+    (1:Ndet)',...
+    estimatedRange(:),...
+    trueRange(1:Ndet)',...
+    RangeError(:),...
+    pks(:),...
+    'VariableNames',...
+    {'Target','Detected_km','True_km','Error_km','Peak'});
+
+disp(DetectionSummary);
+
+%% ========================================================================
+% Figure : Zoomed Range Profile
+% ========================================================================
+
+figure('Color','w',...
+       'Position',[120 120 1050 500]);
+
+plot(range_km,...
+     avgProfile,...
+     'Color',clrBlue,...
+     'LineWidth',2);
+
+hold on
+
+plot(estimatedRange,...
+     pks,...
+     'ro',...
+     'MarkerSize',10,...
+     'MarkerFaceColor','r');
+
+for k=1:length(trueRange)
+
+    xline(trueRange(k),...
+        '--k',...
+        sprintf('True %.0f km',trueRange(k)),...
+        'LineWidth',1.4);
+
+end
+
+grid on
+box on
+
+xlabel('Range (km)','FontWeight','bold');
+ylabel('Normalized Magnitude','FontWeight','bold');
+
+title('Zoomed Target Detection');
+
+xlim([5 18]);
+
+ylim([0 1.05]);
+
+legend('Range Profile',...
+       'Detected Target',...
+       'True Target',...
+       'Location','best');
+
+%% ========================================================================
+% Detection Accuracy
+% ========================================================================
+
+fprintf('\n');
+fprintf('===============================================\n');
+fprintf('TARGET DETECTION REPORT\n');
+fprintf('===============================================\n');
+
+for k=1:Ndet
+
+    fprintf('Target %d\n',k);
+    fprintf('Detected Range : %.3f km\n',estimatedRange(k));
+    fprintf('True Range     : %.3f km\n',trueRange(k));
+    fprintf('Error          : %.3f km\n',RangeError(k));
+    fprintf('Peak           : %.4f\n\n',pks(k));
+
+end
+
+%% ========================================================================
+% Radar Statistics
+% ========================================================================
+
+fprintf('\n');
+fprintf('================ Radar Statistics ================\n');
+
+fprintf('Number of Pulses      : %d\n',Np);
+
+fprintf('Samples per Pulse     : %d\n',Ns);
+
+fprintf('Detected Targets      : %d\n',Ndet);
+
+fprintf('Maximum Range         : %.2f km\n',max(range_km));
+
+fprintf('Range Resolution      : %.2f m\n',c/(2*B));
+
+fprintf('Pulse Width           : %.2f us\n',pulseWidth*1e6);
+
+fprintf('Bandwidth             : %.2f MHz\n',B/1e6);
+
+fprintf('Carrier Frequency     : %.2f GHz\n',fc/1e9);
+
+fprintf('PRF                   : %.0f Hz\n',PRF);
+
+fprintf('==================================================\n');
+
+%% ========================================================================
+% Bar Chart of Range Error
+% ========================================================================
+
+figure('Color','w',...
+       'Position',[200 200 700 450]);
+
+bar(abs(RangeError)*1000);
+
+grid on
+box on
+
+xlabel('Target Number','FontWeight','bold');
+
+ylabel('Absolute Error (m)','FontWeight','bold');
+
+title('Range Estimation Error');
+
+%% ========================================================================
+% Average Error
+% ========================================================================
+
+MeanError = mean(abs(RangeError))*1000;
+
+fprintf('\n');
+
+fprintf('Average Range Error : %.2f m\n',MeanError);
+
+fprintf('\n');
+
+disp('************* PART 2B COMPLETED *************');
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% PART 3A
+% DOPPLER PROCESSING
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+disp(' ');
+disp('================================================');
+disp('PART 3A : DOPPLER PROCESSING');
+disp('================================================');
+
+%% ========================================================================
+% Radar Parameters
+% ========================================================================
+
+lambda = c/fc;
+
+%% ========================================================================
+% Doppler FFT
+% ========================================================================
+
+RD = fftshift(fft(mf,Np,2),2);
+
+RD_mag = abs(RD);
+
+RD_mag = RD_mag./max(RD_mag(:));
+
+%% ========================================================================
+% Doppler Axis
+% ========================================================================
+
+fd = (-Np/2:Np/2-1)*(PRF/Np);
+
+velocityAxis = lambda*fd/2;
+
+%% ========================================================================
+% Figure : Range-Doppler Map
+% ========================================================================
+
+figure('Color','w',...
+       'Position',[100 80 1100 600]);
+
+imagesc(velocityAxis,...
+        range_km,...
+        20*log10(RD_mag+1e-6));
+
+axis xy
+
+xlabel('Velocity (m/s)','FontWeight','bold');
+
+ylabel('Range (km)','FontWeight','bold');
+
+title('Range-Doppler Map');
+
+colorbar
+
+colormap turbo
+
+caxis([-45 0])
+
+grid on
+
+%% ========================================================================
+% Estimate Doppler for Each Target
+% ========================================================================
+
+EstimatedVelocity = zeros(length(estimatedRange),1);
+
+for k = 1:length(estimatedRange)
+
+    [~,idxRange] = min(abs(range_km-estimatedRange(k)));
+
+    profile = RD_mag(idxRange,:);
+
+    [~,idxVel] = max(profile);
+
+    EstimatedVelocity(k)=velocityAxis(idxVel);
+
+end
+
+%% ========================================================================
+% Velocity Table
+% ========================================================================
+
+VelocityTable = table(...
+    (1:length(EstimatedVelocity))',...
+    estimatedRange(:),...
+    EstimatedVelocity(:),...
+    'VariableNames',...
+    {'Target','Range_km','Velocity_mps'});
+
+disp(' ');
+disp('Estimated Target Velocity');
+disp(VelocityTable);
+
+%% ========================================================================
+% Velocity Plot
+% ========================================================================
+
+figure('Color','w',...
+       'Position',[150 150 700 450]);
+
+bar(EstimatedVelocity);
+
+grid on
+
+box on
+
+xlabel('Target Number','FontWeight','bold');
+
+ylabel('Velocity (m/s)','FontWeight','bold');
+
+title('Estimated Target Velocity');
+
+%% ========================================================================
+% Print Results
+% ========================================================================
+
+fprintf('\n');
+fprintf('=========================================\n');
+fprintf('Velocity Estimation\n');
+fprintf('=========================================\n');
+
+for k=1:length(EstimatedVelocity)
+
+    fprintf('Target %d\n',k);
+    fprintf('Range    : %.3f km\n',estimatedRange(k));
+    fprintf('Velocity : %.2f m/s\n',EstimatedVelocity(k));
+    fprintf('\n');
+
+end
+
+disp('************* PART 3A COMPLETED *************');
+
+figure
+plot(angle(mf(160,:)))
+grid on
+title('Phase of Target 1 Across Pulses')
+xlabel('Pulse Number')
+ylabel('Phase (rad)')
+
+figure
+plot(abs(mf(160,:)))
+grid on
+title('Magnitude of Target 1 Across Pulses')
+
+[~, idx1] = min(abs(range_km - estimatedRange(1)));
+[~, idx2] = min(abs(range_km - estimatedRange(2)));
+
+disp([idx1 idx2])
+
+figure
+plot(abs(mf(idx1,:)))
+grid on
+title('Target 1 Magnitude')
+
+figure
+plot(abs(mf(idx2,:)))
+grid on
+title('Target 2 Magnitude')
+
