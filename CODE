@@ -1,0 +1,72 @@
+clc;
+clear;
+close all;
+c=3e8;fc=5e9;lambda=c/fc;B=3e6;tau=20e-6;PRF=6000;PRI=1/PRF;fs=12e6;N_pulses=301;K=B/tau;
+targets=[8e3 20 1;15e3 80 0.7];N_targets=size(targets,1);
+N_samples_PRI=round(PRI*fs);N_samples_pulse=round(tau*fs);
+t_pulse=(0:N_samples_pulse-1)/fs;
+tx_pulse=exp(1j*pi*K*t_pulse.^2);
+mf_kernel=conj(fliplr(tx_pulse));
+noise_sigma=10^(-20/20)/sqrt(2);
+rx_matrix=zeros(N_pulses,N_samples_PRI);
+for p=1:N_pulses
+t_slow=(p-1)*PRI;rx_signal=zeros(1,N_samples_PRI);
+for tgt=1:N_targets
+R0=targets(tgt,1);vel=targets(tgt,2);rcs=targets(tgt,3);
+delay_s=floor((2*(R0+vel*t_slow)/c)*fs);
+idx=delay_s+(1:N_samples_pulse);
+if idx(end)<=N_samples_PRI
+phase=exp(-1j*4*pi*fc*R0/c).*exp(1j*4*pi*vel*t_slow/lambda);
+rx_signal(idx)=rx_signal(idx)+rcs*tx_pulse.*phase;
+end
+end
+rx_matrix(p,:)=rx_signal+noise_sigma*(randn(1,N_samples_PRI)+1j*randn(1,N_samples_PRI));
+end
+mf_matrix=zeros(N_pulses,N_samples_PRI);
+for p=1:N_pulses
+mf_matrix(p,:)=conv(rx_matrix(p,:),mf_kernel,'same');
+end 
+range_axis=(0:N_samples_PRI-1)*(c/(2*fs))/1e3;
+range_axis_shifted=range_axis-1;
+rd_map=fftshift(fft(mf_matrix.*hamming(N_pulses),N_pulses,1),1);
+vel_axis=(-N_pulses/2:N_pulses/2-1)*(PRF/N_pulses)*lambda/2;
+rd_db=20*log10(abs(rd_map)+eps);rd_db=rd_db-max(rd_db(:));
+clr1=[0 0.4470 0.7410];clr2=[0.8500 0.3250 0.0980];clrG=[0.4660 0.6740 0.1880];
+figure('Position',[50 100 1000 400]);
+subplot(1,2,1);plot(t_pulse*1e6,real(tx_pulse),'Color',clr1);hold on;plot(t_pulse*1e6,imag(tx_pulse),'--','Color',clr2);title('TX LFM Chirp');grid on;
+subplot(1,2,2);plot(t_pulse*1e6,K*t_pulse/1e6,'Color',clrG);title('Instantaneous Frequency');grid on;
+figure;
+plot(range_axis,real(rx_matrix(1,:)),'Color',clrG);title('Received Signal');xlim([0 30]);grid on;
+figure;
+mf1_db=20*log10(abs(mf_matrix(1,:))+eps);mf1_db=mf1_db-max(mf1_db);
+plot(range_axis_shifted,mf1_db,'Color',clr1);title('Matched Filter Output');xlim([0 30]);ylim([-60 5]);grid on;
+figure('Position',[50 50 1450 850]);
+subplot(2,2,1);
+avg_db=20*log10(mean(abs(mf_matrix),1)+eps);avg_db=avg_db-max(avg_db);
+plot(range_axis_shifted,avg_db,'Color',clr1);title('Range Profile');xlim([0 30]);ylim([-60 5]);grid on;
+[~,rb1]=min(abs(range_axis*1e3-targets(1,1)));[~,rb2]=min(abs(range_axis*1e3-targets(2,1)));
+slow_t1=mf_matrix(:,rb1);slow_t2=mf_matrix(:,rb2);
+subplot(2,2,2);
+plot(real(slow_t1));hold on;plot(imag(slow_t1),'--');plot(real(slow_t2));plot(imag(slow_t2),'--');title('Slow-Time Signal');grid on;
+subplot(2,2,3);
+d1=fftshift(fft(slow_t1.*hamming(N_pulses)));d2=fftshift(fft(slow_t2.*hamming(N_pulses)));
+d1=20*log10(abs(d1)+eps);d2=20*log10(abs(d2)+eps);
+plot(vel_axis,d1-max(d1));hold on;plot(vel_axis,d2-max(d2),'--');title('Doppler Spectrum');ylim([-60 5]);grid on;
+subplot(2,2,4);
+imagesc(range_axis,vel_axis,rd_db,[-50 0]);axis xy;colormap(jet);colorbar;
+title('Range-Doppler Map');xlim([0 30]);hold on;
+plot(targets(1,1)/1e3,targets(1,2),'w+','MarkerSize',10);
+plot(targets(2,1)/1e3,targets(2,2),'ws','MarkerSize',8);
+PRF_list=[2000 4000 6000 8000 10000];
+figure('Position',[100 100 1500 450]);
+for k=1:5
+v_amb=lambda*PRF_list(k)/4;
+v=linspace(-v_amb,v_amb,2000);
+a1=mod(targets(1,2)+v_amb,2*v_amb)-v_amb;
+a2=mod(targets(2,2)+v_amb,2*v_amb)-v_amb;
+spec=exp(-(v-a1).^2/2)+0.7*exp(-(v-a2).^2/2);
+subplot(1,3,k);
+plot(v,spec/max(spec));hold on;xline(a1,'--b');xline(a2,'--r');
+title(['PRF=' num2str(PRF_list(k))]);grid on;
+end
+disp('SIMULATION COMPLETED SUCCESSFULLY');
